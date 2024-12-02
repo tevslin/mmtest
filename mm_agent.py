@@ -1,6 +1,7 @@
 from datetime import datetime
 import json5 as json
 import pickle
+import re
 from langgraph.graph import Graph
 
 #from langchain.adapters.openai import convert_openai_messages
@@ -50,8 +51,15 @@ Special instructions for quotes:
     
 Ensure that your report is engaging, factually accurate, and provides a comprehensive view of the meeting's importance and impact. This approach will help in making the news report informative, insightful, and relevant to the audience.
 """
+warning_string="WARNING: the following quotes do not exactly match the transcript"
+warning_termination="[End of Warning]"
+pattern=f'{re.escape(warning_string)},*?{re.escape(warning_termination)}'
+
 def check_quotes(article,transcript,prompt):
+    
     # routine to make sure prompts have accurate source
+
+    
     quotes=find_direct_quotes(article)
     if not quotes:
         print ('no quotes in article')
@@ -104,8 +112,9 @@ def check_quotes(article,transcript,prompt):
         return article
     display='\n'.join(missing_quotes)
     print(f'article contains unmatched quotes:\n{display}')
-    return f"""WARNING: the following quotes do not exactly match the transcript:\n
+    return f"""{warning_string}:\n
 {display}\n
+{warning_termination}
 {article}
         """
 
@@ -155,24 +164,30 @@ Return nothing but JSON in the following format:
     def revise(self, article: dict):
         sample_revise_json = """
             {
-                "body": The body of the article,,
-                "message": "message to the critique"
+                "body": <a revised version of the article>
+                "message": <message to the critiquer>
             }
             """
+        article['source']=re.sub(pattern,'',article['source'],flags=re.DOTALL) #remove any previous warnings
         prompt = [SystemMessage(content= f"""
             You are a newspaper editor. Your task is to edit an article which the user will supply you
             in accordance with a critique which the use will also suppy. You must adhere to these instructions:
                 {writing_instructions}
-            return json format of the rewritten article {sample_revise_json}
-            the message item in the json is for any message you have about instructions you were not able to follow
+            Do not make any changes except those called for in the critique.
+            return only the entire revised article without any comment on the revisions.
             """
             
         ), HumanMessage(content= f"""
             following your system instructions
-            rewrite the article below:
-                {str(article['source'])}
+            make only the changes to the article which ar called for in the critique:
+                <article>
+                {article['body']}
+                <end of article>
             as instructed in the critique below:
+                <critique>
                 {article['critique']}
+                <end of critique>
+            return only the entire revised article without any comment on the revisions.
             """
         )]
 
@@ -181,11 +196,10 @@ Return nothing but JSON in the following format:
             "response_format": {"type": "json_object"}
         }
         article['critique']=""
-        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(prompt).content
-        response = json.loads(response)
-        print(f"For article: {article['title']}")
-        print(f"Writer Revision Message: {response['message']}\n")
-        return response
+        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5).invoke(prompt).content
+
+        revision=check_quotes(response,article['source'],prompt)
+        return {"body":revision}
 
     def run(self, article: dict):
         print(f"writer {VERSION} working...,{article.keys()}")
