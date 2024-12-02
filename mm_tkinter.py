@@ -1,5 +1,28 @@
 
+def save_file_dialog(file_object, suggested_filename):
+    """
+    Open a Tkinter file dialog to save the given file object (or text string) with a suggested filename.
     
+    Args:
+        file_object (str or file-like): The file object or text string to be saved.
+        suggested_filename (str): The suggested file name including the extension.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    
+    # Open the save file dialog
+    file_path = filedialog.asksaveasfilename(defaultextension="*.*", initialfile=suggested_filename, title="Save File As")
+    
+    if file_path:
+        with open(file_path, 'w') as f:
+            if isinstance(file_object, str):
+                f.write(file_object)
+            else:
+                f.write(file_object.read())
+    return file_path
+
 def article_options():
     import tkinter as tk
     
@@ -30,8 +53,8 @@ def article_options():
     
     # Slider for "words in article"
     tk.Label(root, text="Words in article:").pack()
-    slider_var = tk.IntVar(value=500)
-    words_slider = tk.Scale(root, from_=100, to=2000, orient='horizontal', variable=slider_var)
+    slider_var = tk.IntVar(value=1000)
+    words_slider = tk.Scale(root, from_=500, to=3000, orient='horizontal', variable=slider_var)
     words_slider.pack()
     
     # Label and Radio buttons for source document
@@ -76,6 +99,29 @@ def process_form(form:int,article):
         link_text="Click here to open source document in browser.",
         link_url=article.get("url"),
     )
+    elif form==2:
+        formatted_items=[]
+        for item in article['significant_items']:
+            formatted_item = f"{item['number']}. {item['description']}\n    Explanation: {item['explanation']}\n"
+            formatted_items.append(formatted_item)
+        formatted_text = "\n".join(formatted_items)
+        answer= open_review_dialog(
+        header="significant items",
+        initial_contents=[formatted_text,""],
+        link_text="Click here to open source document in browser.",
+        link_url=article.get("url"),
+        titles=["proposed significant items","your instructions. Leave blank to proceed with proposed list as is or as edited by you" ], 
+        instruction_text=""""
+            You can either edit the proposed list of significant items or give instructions for changing them.
+            If you make no changes, the article will be based on the first five items. The first will be the lede
+            and the others will get declining space in the article.
+            """
+    )
+    elif form==3:
+        answer={}
+        answer['output_path']=save_file_dialog(article['formatted'],article['output_name'])
+        
+        
     return answer
    
 def request_url(top_label_text="Please enter a URL", 
@@ -221,7 +267,7 @@ def open_review_dialog(header="Editorial Review)",
     return results
 
 if __name__ == '__main__': #test code
-
+    """
     result = open_review_dialog(
         initial_contents=["Initial content for the first box", "Initial content for the second box"],
         titles=["Title 1", "Title 2"],
@@ -233,6 +279,8 @@ if __name__ == '__main__': #test code
 
     result=process_form(0,None)
     print (result)
+    """
+    save_file_dialog("glop","glop.txt")
    
 
     
