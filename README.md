@@ -1,1 +1,1 @@
-# This is a uest repository not ready for use yet
+# This is a test repository not ready for use yet
