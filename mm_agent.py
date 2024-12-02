@@ -3,7 +3,8 @@ import json5 as json
 import pickle
 from langgraph.graph import Graph
 
-from langchain.adapters.openai import convert_openai_messages
+#from langchain.adapters.openai import convert_openai_messages
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from mytools import markdown_to_html,generate_html_from_html_data,find_direct_quotes,find_missing_strings,load_binary_file_from_url
 
@@ -61,17 +62,15 @@ def check_quotes(article,transcript,prompt):
         return article
     display='\n'.join(missing_quotes)
     print(f"quotes missing ain draft article:\n{display}")
-    prompt.append({
-        "role":"user",
-        "content":f"""
+    prompt.append(HumanMessage(content=f"""
         the following quotes from body of the story you wrote were not found verbatim in the source transcript.
         replace them with quote which are verbatim word for word and letter for letter from the transcript
         and return only the amended story
         {display}
         """
-        })
-    lc_messages = convert_openai_messages(prompt)
-    article = ChatOpenAI(model=MODEL, max_retries=1, temperature=0).invoke(lc_messages).content
+        ))
+    #lc_messages = convert_openai_messages(prompt)
+    article = ChatOpenAI(model=MODEL, max_retries=1, temperature=0).invoke(prompt).content
     quotes=find_direct_quotes(article)   
     if not quotes:
         print ('no quotes in revised article')
@@ -82,12 +81,8 @@ def check_quotes(article,transcript,prompt):
         return article
     display='\n'.join(missing_quotes)
     print(f"quotes missing after first pass:\n{display}")
-    prompt.append({
-        "role":"assistant",
-        "content":article})
-    prompt.append({
-        "role":"user",
-        "content":f"""
+    prompt.append(AIMessage(content=article))
+    prompt.append(HumanMessage(content=f"""
         the following quotes from body of the story you wrote were not found verbatim in the source transcript.
         They are instead paraphrases.
         Turn them into indirect quotes with NO quotation marks and follow each with the verbatim text from the transcript
@@ -96,9 +91,9 @@ def check_quotes(article,transcript,prompt):
         verbatim from the transcript including repeated words and other speaking and trancription errors.
         {display}
         """
-        })
-    lc_messages = convert_openai_messages(prompt)
-    article = ChatOpenAI(model=MODEL, max_retries=1, temperature=0).invoke(lc_messages).content
+        ))
+    #lc_messages = convert_openai_messages(prompt)
+    article = ChatOpenAI(model=MODEL, max_retries=1, temperature=0).invoke(prompt).content
     quotes=find_direct_quotes(article)
     if not quotes:
         print ('no quotes in second revised article')
@@ -128,17 +123,13 @@ class WriterAgent:
             }}
             """
 
-        prompt = [{
-            "role": "system",
-            "content": f"""
+        prompt = [SystemMessage(content=f"""
 {writing_instructions}
 Return nothing but JSON in the following format:
         {sample_json}
     """
 
-        }, {
-            "role": "user",
-            "content": f"""Here is the source document describing the meeting:
+        ), HumanMessage(content=f"""Here is the source document describing the meeting:
                {article['source']}
             
             Below is a list in descending order of significance of issues covered in the meeting.
@@ -146,21 +137,17 @@ Return nothing but JSON in the following format:
             The second item should have half as much space, the third item even less. The remaining items get just a mention.
             {article['significant_items']}
             """
-            
+        )]
 
-        }]
-
-        lc_messages = convert_openai_messages(prompt)
+        #lc_messages = convert_openai_messages(prompt)
         optional_params = {
             "response_format": {"type": "json_object"}
         }
 
-        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(lc_messages).content
+        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(prompt).content
         response_dict=json.loads(response)
-        prompt.append({
-            "role": "assistant",
-            "content": response  # Add the AI's response content
-        })
+        prompt.append(AIMessage(content= response  # Add the AI's response content
+        ))
         response_dict['body']=check_quotes(response_dict['body'],article['source'],prompt)
         print ("writer",VERSION,response_dict["information_suggested"],response_dict["summary"])
         return response_dict
@@ -172,9 +159,7 @@ Return nothing but JSON in the following format:
                 "message": "message to the critique"
             }
             """
-        prompt = [{
-            "role": "system",
-            "content": f"""
+        prompt = [SystemMessage(content= f"""
             You are a newspaper editor. Your task is to edit an article which the user will supply you
             in accordance with a critique which the use will also suppy. You must adhere to these instructions:
                 {writing_instructions}
@@ -182,23 +167,21 @@ Return nothing but JSON in the following format:
             the message item in the json is for any message you have about instructions you were not able to follow
             """
             
-        }, {
-            "role": "user",
-            "content": f"""
+        ), HumanMessage(content= f"""
             following your system instructions
             rewrite the article below:
                 {str(article['source'])}
             as instructed in the critique below:
                 {article['critique']}
             """
-        }]
+        )]
 
-        lc_messages = convert_openai_messages(prompt)
+        #lc_messages = convert_openai_messages(prompt)
         optional_params = {
             "response_format": {"type": "json_object"}
         }
         article['critique']=""
-        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(lc_messages).content
+        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(prompt).content
         response = json.loads(response)
         print(f"For article: {article['title']}")
         print(f"Writer Revision Message: {response['message']}\n")
@@ -219,9 +202,7 @@ class CritiqueAgent:
     def critique(self, article: dict):
         #short_article=article.copy()
         #del short_article['source'] #to save tokens
-        prompt = [{
-            "role": "system",
-            "content": """"
+        prompt = [SystemMessage(content= """"
             You are a newspaper writing critiquer. Your ask is to provide short feedback on a written "
             article which the user will provide you.
             the article is a news story so should not include editorial comments.
@@ -230,18 +211,16 @@ class CritiqueAgent:
             if you think the article is as good as it can be, please return only the word 'None' without the surrounding hash marks.
             Try to find at least one thing to improve in the article""
             """
-        }, {
-            "role": "user",
-            "content": f"""
+        ), HumanMessage(content= f"""
             Today's date is {datetime.now().strftime('%d/%m/%Y')}.
             The article and the transcript on which it is based are in the text below:
             {str(article)}
             """
                   
-        }] 
+        )] 
 
-        lc_messages = convert_openai_messages(prompt)
-        response = ChatOpenAI(model="gpt-4o",temperature=1.0, max_retries=1).invoke(lc_messages).content
+        #lc_messages = convert_openai_messages(prompt)
+        response = ChatOpenAI(model="gpt-4o",temperature=1.0, max_retries=1).invoke(prompt).content
         if response == 'None':
             return {'critique': None}
         else:
@@ -324,27 +303,24 @@ based on the transcript or meeting description provided by the user:
 In a message below the user has requested changes to the list which you must now accomplish.
 """
 
-        the_prompts=[
-            {"role":"system",
-             "content":f"""
+        the_prompts=[SystemMessage(content=f"""
              {revise_prompt_content if 'revisons' in article else start_prompt_content}
              Return only JSON in the following format:
             {sample_json}
-            """},
-            {"role":"user",
-            "content":f"""
+            """),
+            HumanMessage(content=f"""
             This is the source information for the meeting
             {article['source']}.
             {"this is how I'd lke you to revise it:"+ article["critique"] if "critique" in article else ""}
             """ 
-             }]
+             )]
 
         
-        lc_messages = convert_openai_messages(the_prompts)
+        #lc_messages = convert_openai_messages(the_prompts)
         optional_params = {
             "response_format": {"type": "json_object"}
         }
-        reply = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(lc_messages)
+        reply = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(the_prompts)
         response_dict=json.loads(reply.content)
         article.update(response_dict)
         article["form"]=2
