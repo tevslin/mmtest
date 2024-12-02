@@ -3,7 +3,7 @@ import os
 import streamlit as st
 import mm_agent
 st.session_state['test']=True #changes appearance of sidebar
-st.session_state["version"]="0.0.1"
+st.session_state["version"]="0.0.2"
 st.set_page_config(layout="wide")
 
 def save_file_dialog(file_object,suggested_file_name):
