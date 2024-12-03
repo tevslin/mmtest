@@ -98,6 +98,7 @@ def process_form(form:int,article):
         initial_contents=[article["body"],article["critique"]],
         link_text="Click here to open source document in browser.",
         link_url=article.get("url"),
+        missing_quotes=[] if 'missing_quotes' not in article else article['missing_quotes']
     )
     elif form==2:
         formatted_items=[]
@@ -204,6 +205,8 @@ def open_review_dialog(header="Editorial Review)",
                 link_url=None, 
                 #radio_labels=[],
                 instruction_text="You can edit either the article or the critique.\n Clear the critique to use the article as displayed. ",
+                output_key='body',
+                missing_quotes=[]
 ):
     import tkinter as tk
     from tkinter import scrolledtext
@@ -215,7 +218,7 @@ def open_review_dialog(header="Editorial Review)",
 
     def close_dialog(action='Cancel'):
         # Collect text area contents before closing
-        results['body'] = text_boxes[0].get('1.0', tk.END).strip()
+        results[output_key] = text_boxes[0].get('1.0', tk.END).strip()
         results['critique'] = text_boxes[1].get('1.0', tk.END).strip() if len(text_boxes) > 1 else ''
         #results['radio'] = radio_var.get()
         results['button'] = action
@@ -244,7 +247,13 @@ def open_review_dialog(header="Editorial Review)",
     if instruction_text:
         instruction_widget=tk.Label(root,text=instruction_text)
         instruction_widget.pack(fill=tk.X,padx=10,pady=10)
-
+        
+    if missing_quotes:
+        quote_widget=tk.Label(root,text="The following quotes were not found verbatim in the transcript:")
+        quote_widget.pack(fill=tk.X,padx=10,pady=10)
+        quote_text="\n".join(missing_quotes)
+        items_label = tk.Label(root, text=quote_text, justify=tk.LEFT, anchor='w')
+        items_label.pack(fill=tk.X, padx=10, pady=10)
 
     # Optional Clickable Link
     if link_text and link_url:
@@ -257,7 +266,7 @@ def open_review_dialog(header="Editorial Review)",
     tk.Button(root, text="Cancel", command=lambda: close_dialog('Cancel')).pack(side=tk.RIGHT)
 
     # A dictionary to store results
-    results = {'body': '', 'critique': '',  'button': 'Cancel'}
+    results = {output_key: '', 'critique': '',  'button': 'Cancel'}
 
     root.mainloop()
 

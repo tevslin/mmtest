@@ -51,25 +51,24 @@ Special instructions for quotes:
     
 Ensure that your report is engaging, factually accurate, and provides a comprehensive view of the meeting's importance and impact. This approach will help in making the news report informative, insightful, and relevant to the audience.
 """
-warning_string="WARNING: the following quotes do not exactly match the transcript"
-warning_termination="[End of Warning]"
-pattern=f'{re.escape(warning_string)},*?{re.escape(warning_termination)}'
+#warning_string="WARNING: the following quotes do not exactly match the transcript"
+#warning_termination="[End of Warning]"
+#pattern=f'{re.escape(warning_string)},*?{re.escape(warning_termination)}'
 
 def check_quotes(article,transcript,prompt):
     
     # routine to make sure prompts have accurate source
 
-    
     quotes=find_direct_quotes(article)
     if not quotes:
         print ('no quotes in article')
-        return article
+        return article,[]
     missing_quotes=find_missing_strings(quotes,transcript)
     if not missing_quotes:
         print("all quotes found")
-        return article
+        return article,[]
     display='\n'.join(missing_quotes)
-    print(f"quotes missing ain draft article:\n{display}")
+    print(f"quotes missing in draft article:\n{display}")
     prompt.append(HumanMessage(content=f"""
         the following quotes from body of the story you wrote were not found verbatim in the source transcript.
         replace them with quote which are verbatim word for word and letter for letter from the transcript
@@ -82,11 +81,11 @@ def check_quotes(article,transcript,prompt):
     quotes=find_direct_quotes(article)   
     if not quotes:
         print ('no quotes in revised article')
-        return article
+        return article,[]
     missing_quotes=find_missing_strings(quotes,transcript)
     if not missing_quotes:
         print("all quotes found in revised article")
-        return article
+        return article,[]
     display='\n'.join(missing_quotes)
     print(f"quotes missing after first pass:\n{display}")
     prompt.append(AIMessage(content=article))
@@ -105,60 +104,78 @@ def check_quotes(article,transcript,prompt):
     quotes=find_direct_quotes(article)
     if not quotes:
         print ('no quotes in second revised article')
-        return article
+        return article,[]
     missing_quotes=find_missing_strings(quotes,transcript)
     if not missing_quotes:
         print("all quotes found in second revised article")
-        return article
+        return article,[]
     display='\n'.join(missing_quotes)
     print(f'article contains unmatched quotes:\n{display}')
-    return f"""{warning_string}:\n
-{display}\n
-{warning_termination}
-{article}
-        """
+    return article,missing_quotes
+        
 
 class WriterAgent:
 
     def writer(self, article):
+        if "prompt" in article: #second call to writer
+            prompt=article['prompt']
+            prompt.append(HumanMessage(content=f"""
+            revise the article as specified in the critique below returning just the revised article.
+            The article must always have subheads in markdown fomat.
+            The latest version of the article which is your starting point is here:
+ <revised article>
+ {article['body']}
+ <end of revised article>
+ <critique>
+ {article['critique']}
+ <end of critique>
+             """
+            ))
+            response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5).invoke(prompt).content
+            response_dict={"body":response}
+        else: 
+ 
         
-        sample_json = f"""
-            {{
-              "title": title of the article,
-              "date": meeting date,
-              "body": The body of the article as a text of {str(article['words'])} words divided into paragraphs separated by newline characters and formatted as markdown.
-              "information_suggested": information not in the transcript or minutes which would be helpful to a more complete story,
-              "summary": 2 sentences summary of the article
-            }}
-            """
+            sample_json = f"""
+                {{
+                  "title": title of the article,
+                  "date": meeting date,
+                  "body": The body of the article as a text of {str(article['words'])} words divided into paragraphs separated by newline characters and formatted as markdown with subheads.
+                  "information_suggested": information not in the transcript or minutes which would be helpful to a more complete story,
+                  "summary": 2 sentences summary of the article
+                }}
+                """
+    
+            prompt = [SystemMessage(content=f"""
+    {writing_instructions}
 
-        prompt = [SystemMessage(content=f"""
-{writing_instructions}
-Return nothing but JSON in the following format:
-        {sample_json}
-    """
+        """
+    
+            ), HumanMessage(content=f"""Here is the source document describing the meeting:
+                   {article['source']}
+                
+                Below is a list in descending order of significance of issues covered in the meeting.
+                The first item should be the lede for the story and have approximately 1/3 of the story devoted to it.
+                The second item should have half as much space, the third item even less. The remaining items get just a mention.
+                {article['significant_items']}
+                Return nothing but JSON in the following format:
+            {sample_json}
+                """
+            )]
 
-        ), HumanMessage(content=f"""Here is the source document describing the meeting:
-               {article['source']}
-            
-            Below is a list in descending order of significance of issues covered in the meeting.
-            The first item should be the lede for the story and have approximately 1/3 of the story devoted to it.
-            The second item should have half as much space, the third item even less. The remaining items get just a mention.
-            {article['significant_items']}
-            """
-        )]
+        
+            optional_params = {
+                "response_format": {"type": "json_object"}}
+            response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(prompt).content
+            response_dict=json.loads(response)
+    
 
-        #lc_messages = convert_openai_messages(prompt)
-        optional_params = {
-            "response_format": {"type": "json_object"}
-        }
 
-        response = ChatOpenAI(model=MODEL, max_retries=1, temperature=.5,model_kwargs=optional_params).invoke(prompt).content
-        response_dict=json.loads(response)
         prompt.append(AIMessage(content= response  # Add the AI's response content
         ))
-        response_dict['body']=check_quotes(response_dict['body'],article['source'],prompt)
-        print ("writer",VERSION,response_dict["information_suggested"],response_dict["summary"])
+        response_dict['body'],response_dict['missing_quotes']=check_quotes(response_dict['body'],article['source'],prompt)
+        response_dict['prompt']=prompt
+        #print ("writer",VERSION,response_dict["information_suggested"],response_dict["summary"])
         return response_dict
 
     def revise(self, article: dict):
@@ -168,7 +185,7 @@ Return nothing but JSON in the following format:
                 "message": <message to the critiquer>
             }
             """
-        article['source']=re.sub(pattern,'',article['source'],flags=re.DOTALL) #remove any previous warnings
+        #article['source']=re.sub(pattern,'',article['source'],flags=re.DOTALL) #remove any previous warnings
         prompt = [SystemMessage(content= f"""
             You are a newspaper editor. Your task is to edit an article which the user will supply you
             in accordance with a critique which the use will also suppy. You must adhere to these instructions:
@@ -205,7 +222,7 @@ Return nothing but JSON in the following format:
         print(f"writer {VERSION} working...,{article.keys()}")
         critique = article.get("critique")
         if critique is not None:
-            article.update(self.revise(article))
+            article.update(self.writer(article)) #will remove redundent code if test woks
         else:
             article.update(self.writer( article))
         return article
@@ -228,13 +245,18 @@ class CritiqueAgent:
         ), HumanMessage(content= f"""
             Today's date is {datetime.now().strftime('%d/%m/%Y')}.
             The article and the transcript on which it is based are in the text below:
-            {str(article)}
+            <transcript>
+            {article['source']}
+            <end transcript>
+            <article>
+            {article['body']}
+            <end article>
             """
                   
         )] 
 
         #lc_messages = convert_openai_messages(prompt)
-        response = ChatOpenAI(model="gpt-4o",temperature=1.0, max_retries=1).invoke(prompt).content
+        response = ChatOpenAI(model=MODEL,temperature=1.0, max_retries=1).invoke(prompt).content
         if response == 'None':
             return {'critique': None}
         else:
@@ -260,6 +282,7 @@ class InputAgent:
         print(article.keys())
         if "transcript" in article:
             the_text=load_text_from_url(article["transcript"])
+
         elif "url" in article:
             the_text=load_text_from_url(article["url"])
             
@@ -269,6 +292,10 @@ class InputAgent:
                 del article["raw"]
             else:
                 the_text=load_text_from_path(article['file_name'])
+        delimiter='Select text if you\'d like to play only a clip.\nPlay Clip\nPlay Full Video\nPause\n\n\n            Your browser does not support the video tag'
+        real_end=the_text.find(delimiter) #temporary kluge for using the transcript
+        if real_end!=-1:
+            the_text=the_text[:real_end]
         article["source"]=the_text
         return article
             
@@ -281,7 +308,7 @@ class OutputAgent:
             article["output_name"]="SmartStory.html"
             pickle_data=load_binary_file_from_url(article['pickle'])
             deepgram_return=pickle.loads(pickle_data)
-            article['formatted']=generate_html_from_html_data(markdown_article,article['video'],deepgram_return)
+            article['formatted'],article["missing_quotes"]=generate_html_from_html_data(markdown_article,article['video'],deepgram_return)
         else:
             article["output_name"]="Story.html"
             article['formatted']=markdown_article

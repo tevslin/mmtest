@@ -65,7 +65,7 @@ def process_form(form_number,article):
             link_url=None, 
             #radio_labels=[],
             instruction_text="You can edit either the article or the critique.\n Clear the critique to use the article as displayed. ",
-            ):
+            output_key='body'):
         st.title(header)
         
         # Instructions (if any)
@@ -92,7 +92,7 @@ def process_form(form_number,article):
             # Perform actions based on the form submission here
             # For example, print or store the contents of text_boxes
 
-            st.session_state["newvalues"]={"body":text_boxes[0],"critique":text_boxes[1],"button":"OK"}
+            st.session_state["newvalues"]={output_key:text_boxes[0],"critique":text_boxes[1],"button":"OK"}
             text_boxes=""
 
         
@@ -142,7 +142,8 @@ def process_form(form_number,article):
             You can either edit the proposed list of significant items or give instructions for changing them.
             If you make no changes, the article will be based on the first five items. The first will be the lede
             and the others will get declining space in the article.
-            """
+            """,
+        output_key="significant_items"
     )
 
         
@@ -188,7 +189,17 @@ else:
 with st.sidebar:
 
     st.markdown(sidebar_message)
+    st.session_state['placeholder']=st.sidebar.empty()
 
+def write_missing():
+    print(f" write missing called: {st.session_state.get('missing_quotes')}")
+    if "missing_quotes" in st.session_state and st.session_state['missing_quotes']:
+        with st.session_state["placeholder"].container():
+            st.sidebar.write("The following quotes do not appear verbatim in the transcript:")
+            for quote in st.session_state['missing_quotes']:
+                st.sidebar.write(quote)
+    
+    
 # Sidebar for API key input
 
 if not st.session_state.api_key:
@@ -216,9 +227,14 @@ if st.session_state['api_key'] and st.session_state["dm"] is None:
 
 
 if st.session_state["result"]:
-    print("have result")
+    print(f"have result {st.session_state['result'].keys()}")
+    
     #st.session_state["newvalues"]
     #if "quit" not in st.session_state['result']:
+    if 'missing_quotes' in st.session_state["result"]:
+        st.session_state['missing_quotes']=st.session_state["result"]["missing_quotes"]
+        print(f"missing quotes1: {st.session_state['result']['missing_quotes']}")
+    write_missing()
     if st.session_state["newvalues"] is None:
         process_form(st.session_state['result']["form"],st.session_state['result'])
     if st.session_state["newvalues"] and "next" in st.session_state.newvalues:
@@ -229,6 +245,8 @@ if st.session_state["result"]:
             #st.session_state["newvalues"]
             with st.spinner("Please wait... Bots at work"):
                 st.session_state["result"]=st.session_state['dm'].resume(st.session_state["newvalues"])
+            if 'missing_quotes' in st.session_state["result"]:
+                print(f"missing quotes2: {st.session_state['result']['missing_quotes']}")
             st.session_state["newvalues"]=None
             st.rerun()
     if "quit" in st.session_state["result"]:
