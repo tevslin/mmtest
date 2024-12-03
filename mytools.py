@@ -287,6 +287,7 @@ def generate_html_from_html_data(article_html, video_filepath, deepgram_return, 
         for open_quote, quote_text, close_quote in reversed(quotes):
             full_quote = f'{open_quote}{quote_text}{close_quote}'
             clip = find_clip_for_quote(quote_text)
+            print (f"qoute_found: {quote_text}")
             if clip:
                 # Create the appropriate video tag
                 if is_m3u8:
@@ -325,11 +326,8 @@ def generate_html_from_html_data(article_html, video_filepath, deepgram_return, 
         with open(output_html_filepath, 'w', encoding='utf-8') as output_html_file:
             output_html_file.write(str(soup))       
             print(f'HTML file generated: {output_html_filepath}')
-    else:
-        return str(soup)
-        
-    return not_found
-    
+    return str(soup), not_found
+
 def extract_text(content,content_type):
     from bs4 import BeautifulSoup
     from docx import Document
